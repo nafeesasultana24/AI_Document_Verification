@@ -14,12 +14,9 @@ from paddleocr import PaddleOCR
 # Load OCR model once
 ocr_model = PaddleOCR(
     use_angle_cls=True,
-    lang="en",            # base language  
-    use_gpu=False,
-    det=True,
-    rec=True,
-    cls=True
+    lang="en"
 )
+
 
 def normalize_text(text):
     if not text:
