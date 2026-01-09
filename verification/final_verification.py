@@ -152,11 +152,15 @@ def verify_document(text, confidence, filename):
     # -------------------------------
     # STEP 3 TEMP DEBUG (OPTIONAL, CAN REMOVE LATER)
     # -------------------------------
+    # -------------------------------
+    # STEP 3 TEMP DEBUG (OPTIONAL, CAN REMOVE LATER)
+    # -------------------------------
     st.write("Normalized Text:", norm_text)
     st.write("PAN:", pan_no, "Aadhaar:", aadhaar_no)
     st.write("Document Type:", document_type)
     st.write("Template Score:", report["Template Match Score"])
     st.write("OCR Confidence:", confidence)
     st.write("Verification Confidence:", report["Verification Confidence"])
+
 
     return report
