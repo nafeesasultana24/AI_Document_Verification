@@ -5,11 +5,20 @@ import streamlit as st
 import tempfile
 import numpy as np
 from PIL import Image
-from pdf2image import convert_from_bytes
-
+import pypdfium2 as pdfium
 from ocr.ocr_engine import ocr_on_image
 from verification.final_verification import verify_document
 from utils.pdf_report import generate_pdf
+
+
+# ---------------- PDF → IMAGE (STREAMLIT SAFE) ----------------
+def pdf_to_images(pdf_bytes):
+    pdf = pdfium.PdfDocument(pdf_bytes)
+    pages = []
+    for page in pdf:
+        pil_image = page.render(scale=3).to_pil()
+        pages.append(pil_image)
+    return pages
 
 
 # ---------------- PAGE CONFIG ----------------
@@ -117,7 +126,8 @@ if uploaded_files:
 
         # ========== PDF HANDLING ==========
         if file.name.lower().endswith(".pdf"):
-            pages = convert_from_bytes(file.read(), dpi=300)
+            pages = pdf_to_images(file.read())
+
 
 
             for i, page in enumerate(pages):
