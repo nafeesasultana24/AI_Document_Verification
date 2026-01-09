@@ -143,6 +143,11 @@ if uploaded_files:
                 text = result["final"]["text"]
                 confidence = result["final"]["confidence"]
 
+                # 🔎 TEMP DEBUG (STEP 3)
+                st.write("OCR TEXT LENGTH:", len(text))
+                st.write("OCR CONFIDENCE:", confidence)
+
+
 
                 st.markdown("<div class='card'>", unsafe_allow_html=True)
                 st.markdown("**📄 OCR Extracted Text**")
@@ -177,6 +182,11 @@ if uploaded_files:
 
             text = result["final"]["text"]
             confidence = result["final"]["confidence"]
+
+            # 🔎 TEMP DEBUG (STEP 3)
+            st.write("OCR TEXT LENGTH:", len(text))
+            st.write("OCR CONFIDENCE:", confidence)
+
 
             st.markdown("<div class='card'>", unsafe_allow_html=True)
             st.markdown("**📄 OCR Extracted Text**")

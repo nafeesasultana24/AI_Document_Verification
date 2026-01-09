@@ -7,7 +7,7 @@ def preprocess_image(image_path):
     if not isinstance(image_path, str):
         # ✅ ADDED: allow NumPy image input (Streamlit)
         if isinstance(image_path, np.ndarray):
-            img = Image.fromarray(image_path)
+            img = Image.fromarray(image_path).convert("RGB")  # 🔧 ensure RGB
         else:
             raise ValueError("Expected image file path or NumPy array")
     else:
@@ -32,17 +32,18 @@ def preprocess_image(image_path):
     gray = ImageOps.autocontrast(gray)
 
     # ✅ ADDED: extra contrast boost (OCR stability)
-    gray = ImageEnhance.Contrast(gray).enhance(2.0)
+    gray = ImageEnhance.Contrast(gray).enhance(1.3)  # 🔧 reduced from 2.0
 
     # -------- Adaptive-like binarization (NumPy) --------
     gray_np = np.array(gray)
 
-    # simple adaptive threshold approximation
+    # 🔧 MODIFIED: keep this line but soften its effect
     mean = gray_np.mean()
-    processed = np.where(gray_np > mean - 10, 255, 0).astype(np.uint8)
+    processed = np.where(gray_np > mean - 10, gray_np, gray_np).astype(np.uint8)
+    # ↑ keeps original grayscale values instead of hard 0/255
 
     # ✅ ADDED: convert back to RGB for PaddleOCR
     processed = Image.fromarray(processed).convert("RGB")
-    processed = np.array(processed)
+    processed = np.array(processed).astype(np.uint8)
 
     return processed
