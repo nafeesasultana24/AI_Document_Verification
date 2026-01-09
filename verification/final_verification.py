@@ -7,12 +7,12 @@ from verification.field_validator import validate_fields
 from verification.field_confidence import calculate_field_confidence
 
 
-
-
 # -------------------------------
 # TEXT NORMALIZATION
 # -------------------------------
 def normalize_text(text):
+    if not text:
+        return ""
     text = unicodedata.normalize("NFKC", text).upper()
     text = re.sub(r"[^A-Z0-9]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
@@ -23,8 +23,10 @@ def normalize_text(text):
 # NUMBER EXTRACTION
 # -------------------------------
 def extract_aadhaar_number(text):
-    cleaned = re.sub(r"[^\d ]", "", text)
+    if not text:
+        return None
 
+    cleaned = re.sub(r"[^\d ]", "", text)
     candidates = re.findall(r"\b[2-9]\d{3}\s?\d{4}\s?\d{4}\b", cleaned)
 
     for c in candidates:
@@ -35,8 +37,9 @@ def extract_aadhaar_number(text):
     return None
 
 
-
 def extract_pan(text):
+    if not text:
+        return None
     match = re.search(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b", text)
     return match.group() if match else None
 
@@ -45,7 +48,7 @@ def extract_pan(text):
 # DOCUMENT TYPE DETECTION (STRICT)
 # -------------------------------
 def detect_document_type(text, aadhaar_no, pan_no):
-    t = text.replace(" ", "")
+    t = text.replace(" ", "") if text else ""
 
     # ✅ PAN HAS PRIORITY
     if pan_no:
@@ -86,7 +89,7 @@ def verify_document(text, confidence, filename):
     classification = classify_document(norm_text)
 
     report["Document Type"] = classification.get("document", "Unknown")
-    report["Document Category"] = classification.get("category", "Unknown")
+    report["Document Category"] = classification.get("category", "Other")
     report["Template Match Score"] = classification.get("score", 0)
 
     document_type = report["Document Type"]
@@ -95,7 +98,7 @@ def verify_document(text, confidence, filename):
     # PAN & AADHAAR EXTRACTION
     # -------------------------------
     pan_no = extract_pan(norm_text)
-    aadhaar_no = extract_aadhaar_number(text)
+    aadhaar_no = extract_aadhaar_number(norm_text)
 
     aadhaar_keywords = ["AADHAAR", "UIDAI", "UNIQUE IDENTIFICATION"]
     aadhaar_detected = aadhaar_no is not None and any(k in norm_text for k in aadhaar_keywords)
@@ -142,8 +145,17 @@ def verify_document(text, confidence, filename):
     # -------------------------------
     report["OCR Confidence"] = confidence
     report["Verification Confidence"] = round(
-    (confidence * 0.4) + (report["Field Confidence"] * 0.6), 2
-)
+        (confidence * 0.4) + (report["Field Confidence"] * 0.6), 2
+    )
 
+    # -------------------------------
+    # STEP 3 TEMP DEBUG (OPTIONAL, CAN REMOVE LATER)
+    # -------------------------------
+     st.write("Normalized Text:", norm_text)
+     st.write("PAN:", pan_no, "Aadhaar:", aadhaar_no)
+     st.write("Document Type:", document_type)
+     st.write("Template Score:", report["Template Match Score"])
+     st.write("OCR Confidence:", confidence)
+     st.write("Verification Confidence:", report["Verification Confidence"])
 
     return report

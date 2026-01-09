@@ -1,7 +1,7 @@
 import os
 import unicodedata
 import numpy as np
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageFilter, ImageOps, ImageEnhance
 import math
 import easyocr
 
@@ -22,29 +22,41 @@ def normalize_text(text):
     return text.replace("\n", " ").strip()
 
 
-def preprocess_image(image):
+def preprocess_image(image_input):
     """
     Streamlit-safe preprocessing using PIL + NumPy only
+    Step 2 style: upscale, contrast, denoise, threshold
     """
 
-    if image is None or not isinstance(image, np.ndarray):
+    # ---------- INPUT HANDLING ----------
+    if image_input is None or not isinstance(image_input, np.ndarray):
         return None
 
-    # NumPy → PIL
-    img = Image.fromarray(image).convert("L")
+    # NumPy → PIL RGB
+    img = Image.fromarray(image_input).convert("RGB")
 
-    # Noise reduction
-    img = img.filter(ImageFilter.MedianFilter(size=3))
+    # ---------- UPSCALE FOR OCR ----------
+    new_width = int(img.width * 1.5)
+    new_height = int(img.height * 1.5)
+    img = img.resize((new_width, new_height), Image.BICUBIC)
 
-    # Contrast enhancement
-    img = ImageOps.autocontrast(img)
+    # ---------- GRAYSCALE & DENOISE ----------
+    gray = img.convert("L")
+    gray = gray.filter(ImageFilter.MedianFilter(size=3))
 
-    # Thresholding (OCR-friendly)
-    img = img.point(lambda x: 255 if x > 140 else 0)
+    # ---------- CONTRAST & SHARPEN ----------
+    gray = ImageOps.autocontrast(gray)
+    gray = ImageEnhance.Contrast(gray).enhance(2.0)
+    gray = gray.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
 
-    # Convert back to RGB NumPy (EasyOCR requirement)
-    img = img.convert("RGB")
-    return np.array(img)
+    # ---------- ADAPTIVE-LIKE BINARIZATION ----------
+    gray_np = np.array(gray)
+    mean_val = gray_np.mean()
+    binarized = np.where(gray_np > mean_val - 10, 255, 0).astype(np.uint8)
+
+    # ---------- BACK TO RGB FOR EasyOCR ----------
+    processed = Image.fromarray(binarized).convert("RGB")
+    return np.array(processed)
 
 
 def ocr_on_image(image):
