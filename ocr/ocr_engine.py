@@ -2,6 +2,7 @@ import os
 import unicodedata
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
+from ocr.preprocess import preprocess_image
 import math
 
 # ===== FIX FOR WINDOWS CPU CRASH =====

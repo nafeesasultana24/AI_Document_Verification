@@ -19,10 +19,76 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("🆔 AI Government Document Verification System")
-st.caption(
-    "AI-Powered OCR-Based Government Document Analysis, Validation & Confidence Analysis"
+# ---------------- CUSTOM CSS ----------------
+st.markdown(
+    """
+    <style>
+    /* Background Gradient */
+    .stApp {
+        background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
+        color: #ffffff;
+    }
+
+    /* Glowing main heading */
+    .glow-heading {
+        font-size: 48px;
+        color: #00ffff;
+        text-align: center;
+        text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 30px #00ffff;
+        font-weight: bold;
+        margin-bottom: 0;
+    }
+
+    /* Glowing subheading */
+    .glow-subheading {
+        font-size: 22px;
+        color: #ffdd00;
+        text-align: center;
+        text-shadow: 0 0 5px #ffdd00, 0 0 10px #ffdd00, 0 0 15px #ffdd00;
+        margin-top: 0;
+        margin-bottom: 30px;
+    }
+
+    /* Card-like container */
+    .card {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 15px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+
+    /* Glowing button */
+    .stButton>button {
+        background-color: #00ffff;
+        color: #000;
+        font-weight: bold;
+        border-radius: 10px;
+        padding: 0.5em 1.5em;
+        box-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff;
+        transition: all 0.3s ease;
+    }
+
+    .stButton>button:hover {
+        box-shadow: 0 0 20px #00ffff, 0 0 40px #00ffff, 0 0 60px #00ffff;
+        transform: scale(1.05);
+    }
+
+    /* OCR text area styling */
+    .stTextArea textarea {
+        background-color: rgba(255,255,255,0.1);
+        color: #fff;
+        border-radius: 10px;
+        border: 1px solid #00ffff;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
+
+# ---------------- MAIN HEADING ----------------
+st.markdown('<h1 class="glow-heading">🆔 AI Government Document Verification System</h1>', unsafe_allow_html=True)
+st.markdown('<h3 class="glow-subheading">AI-Powered OCR-Based Government Document Analysis, Validation & Confidence Analysis</h3>', unsafe_allow_html=True)
+
 
 # ---------------- FILE UPLOADER ----------------
 st.markdown("<div class='card'>", unsafe_allow_html=True)
