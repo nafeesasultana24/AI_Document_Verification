@@ -5,7 +5,7 @@ import streamlit as st
 import tempfile
 import numpy as np
 from PIL import Image
-from pdf2image import convert_from_path
+from pdf2image import convert_from_bytes
 
 from ocr.ocr_engine import ocr_on_image
 from verification.final_verification import verify_document
@@ -51,11 +51,8 @@ if uploaded_files:
 
         # ========== PDF HANDLING ==========
         if file.name.lower().endswith(".pdf"):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(file.read())
-                pdf_path = tmp.name
+            pages = convert_from_bytes(file.read(), dpi=300)
 
-            pages = convert_from_path(pdf_path, dpi=300)
 
             for i, page in enumerate(pages):
                 st.markdown(f"### 📄 Page {i+1}")
@@ -74,11 +71,12 @@ if uploaded_files:
 
                 result = ocr_on_image(img)
 
-                status.success("✅ OCR Completed")
-                progress.progress(100)
+                st.write("🔎 RAW OCR RESULT (PDF):")
+                st.write(result)
 
                 text = result["final"]["text"]
                 confidence = result["final"]["confidence"]
+
 
                 st.markdown("<div class='card'>", unsafe_allow_html=True)
                 st.markdown("**📄 OCR Extracted Text**")
@@ -108,8 +106,8 @@ if uploaded_files:
 
             result = ocr_on_image(img)
 
-            status.success("✅ OCR Completed")
-            progress.progress(100)
+            st.write("🔎 RAW OCR RESULT:")
+            st.write(result)
 
             text = result["final"]["text"]
             confidence = result["final"]["confidence"]

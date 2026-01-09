@@ -75,15 +75,14 @@ def ocr_on_image(image):
             if len(word_info) < 2:
                 continue
 
-            text, conf = word_info[1]
+            text = normalize_text(word_info[1][0])
+            conf = word_info[1][1]
 
-            if not isinstance(text, str) or not text.strip():
-                continue
+            if text.strip():
+                extracted_text.append(text)
+                confidences.append(conf)
 
-            extracted_text.append(text)
-            confidences.append(conf)
-
-    final_text = normalize_text(" ".join(extracted_text))
+    final_text = " ".join(extracted_text).strip()
     avg_conf = round((sum(confidences) / len(confidences)) * 100, 2) if confidences else 0
 
     return {
