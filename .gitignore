@@ -1,3 +1,15 @@
-venv/
-*.pyc
+# Python cache
 __pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# VS Code
+.vscode/
+
+# Generated files
+*.pdf
+
+# OS files
+.DS_Store
