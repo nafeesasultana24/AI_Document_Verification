@@ -2,20 +2,17 @@ import os
 import unicodedata
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
-from ocr.preprocess import preprocess_image
 import math
+import easyocr
 
-# ===== FIX FOR WINDOWS CPU CRASH =====
-os.environ["FLAGS_use_mkldnn"] = "0"
+# ===== STREAMLIT SAFE ENV =====
 os.environ["OMP_NUM_THREADS"] = "4"
 
-from paddleocr import PaddleOCR
+# ❌ DISABLED (DO NOT REMOVE LINE – prevents crash)
+PaddleOCR = None
 
-# Load OCR model once
-ocr_model = PaddleOCR(
-    use_angle_cls=True,
-    lang="en"
-)
+# ✅ Load EasyOCR ONCE
+reader = easyocr.Reader(['en'], gpu=False)
 
 
 def normalize_text(text):
@@ -30,11 +27,10 @@ def preprocess_image(image):
     Streamlit-safe preprocessing using PIL + NumPy only
     """
 
-    # Expect NumPy image (RGB)
     if image is None or not isinstance(image, np.ndarray):
         return None
 
-    # Convert NumPy → PIL
+    # NumPy → PIL
     img = Image.fromarray(image).convert("L")
 
     # Noise reduction
@@ -43,10 +39,11 @@ def preprocess_image(image):
     # Contrast enhancement
     img = ImageOps.autocontrast(img)
 
-    # Simple thresholding
-    img = img.point(lambda x: 255 if x > 140 else 0, mode="1")
+    # Thresholding (OCR-friendly)
+    img = img.point(lambda x: 255 if x > 140 else 0)
 
-    # Convert back to NumPy
+    # Convert back to RGB NumPy (EasyOCR requirement)
+    img = img.convert("RGB")
     return np.array(img)
 
 
@@ -54,13 +51,8 @@ def ocr_on_image(image):
     extracted_text = []
     confidences = []
 
-    # ✅ Preprocess safely
     processed = preprocess_image(image)
-
-    try:
-        # 🔥 ALWAYS pass processed image
-        result = ocr_model.ocr(processed, cls=True)
-    except Exception as e:
+    if processed is None:
         return {
             "final": {
                 "text": "",
@@ -68,20 +60,26 @@ def ocr_on_image(image):
             }
         }
 
-    for line in result:
-        if not line:
-            continue
+    try:
+        # ✅ EASYOCR EXECUTION
+        results = reader.readtext(processed)
+    except Exception:
+        return {
+            "final": {
+                "text": "",
+                "confidence": 0
+            }
+        }
 
-        for word_info in line:
-            text = word_info[1][0]
-            conf = word_info[1][1]
-
-            if text and isinstance(text, str) and text.strip():
-                extracted_text.append(text.strip())
+    for box, text, conf in results:
+        if text and isinstance(text, str):
+            clean_text = normalize_text(text)
+            if clean_text:
+                extracted_text.append(clean_text)
                 confidences.append(conf)
 
     final_text = " ".join(extracted_text)
-    avg_conf = round((sum(confidences) / len(confidences)) * 100, 2) if confidences else 0
+    avg_conf = round(float(np.mean(confidences)) * 100, 2) if confidences else 0
 
     return {
         "final": {
