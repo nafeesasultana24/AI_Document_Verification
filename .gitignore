@@ -1,15 +1,5 @@
-# Python cache
+venv/
 __pycache__/
 *.pyc
-
-# Virtual environment
-venv/
-
-# VS Code
 .vscode/
-
-# Generated files
-*.pdf
-
-# OS files
-.DS_Store
+verification_report.pdf
