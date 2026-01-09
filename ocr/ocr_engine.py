@@ -54,33 +54,34 @@ def ocr_on_image(image):
     extracted_text = []
     confidences = []
 
+    # ✅ Preprocess safely
     processed = preprocess_image(image)
-    if processed is None:
-        return {
-            "final": {"text": "", "confidence": 0}
-        }
 
     try:
-        # ✅ USE processed image
+        # 🔥 ALWAYS pass processed image
         result = ocr_model.ocr(processed, cls=True)
     except Exception as e:
         return {
-            "final": {"text": "", "confidence": 0}
+            "final": {
+                "text": "",
+                "confidence": 0
+            }
         }
 
     for line in result:
+        if not line:
+            continue
+
         for word_info in line:
             text = word_info[1][0]
             conf = word_info[1][1]
 
-            if text and isinstance(text, str):
+            if text and isinstance(text, str) and text.strip():
                 extracted_text.append(text.strip())
                 confidences.append(conf)
 
-    final_text = " ".join(extracted_text).strip()
-    avg_conf = round(
-        (sum(confidences) / len(confidences)) * 100, 2
-    ) if confidences else 0
+    final_text = " ".join(extracted_text)
+    avg_conf = round((sum(confidences) / len(confidences)) * 100, 2) if confidences else 0
 
     return {
         "final": {
