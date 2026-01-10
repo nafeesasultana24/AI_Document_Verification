@@ -2,7 +2,6 @@ import os
 import unicodedata
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps, ImageEnhance
-import math
 import easyocr
 
 # ===== STREAMLIT SAFE ENV =====
@@ -25,62 +24,56 @@ def normalize_text(text):
 def preprocess_image(image_input):
     """
     Streamlit-safe preprocessing using PIL + NumPy only
-    Step 2 style: upscale, contrast, denoise, threshold
+    Document-optimized (Aadhaar / PAN / certificates)
     """
 
     # ---------- INPUT HANDLING ----------
     if image_input is None or not isinstance(image_input, np.ndarray):
         return None
 
-    # ✅ ADD: force uint8 for EasyOCR stability
+    # Force uint8 for EasyOCR stability
     if image_input.dtype != np.uint8:
         image_input = image_input.astype(np.uint8)
 
     # NumPy → PIL RGB
     img = Image.fromarray(image_input).convert("RGB")
 
-    # ✅ ADD: ensure minimum resolution (Aadhaar text is tiny)
+    # Ensure minimum resolution
     if img.width < 800 or img.height < 600:
         img = img.resize((img.width * 2, img.height * 2), Image.BICUBIC)
 
-    # ---------- UPSCALE FOR OCR ----------
-    new_width = int(img.width * 1.5)
-    new_height = int(img.height * 1.5)
-    img = img.resize((new_width, new_height), Image.BICUBIC)
+    # ---------- UPSCALE ----------
+    img = img.resize(
+        (int(img.width * 1.5), int(img.height * 1.5)),
+        Image.BICUBIC
+    )
 
     # ---------- GRAYSCALE & DENOISE ----------
     gray = img.convert("L")
     gray = gray.filter(ImageFilter.MedianFilter(size=3))
-
-    # ✅ ADD: slight brightness normalization
     gray = ImageEnhance.Brightness(gray).enhance(1.1)
 
     # ---------- CONTRAST & SHARPEN ----------
     gray = ImageOps.autocontrast(gray)
     gray = ImageEnhance.Contrast(gray).enhance(2.0)
     gray = gray.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
-
-    # ✅ ADD: second gentle sharpening (helps Aadhaar fonts)
     gray = ImageEnhance.Sharpness(gray).enhance(1.4)
 
-    # ---------- ADAPTIVE-LIKE BINARIZATION ----------
+    # ---------- CONDITIONAL BINARIZATION ----------
     gray_np = np.array(gray)
     mean_val = gray_np.mean()
+    contrast_level = np.std(gray_np)
 
-    # ✅ ADD: clamp threshold to avoid over-binarization
+    skip_binarization = contrast_level > 45
     threshold = max(mean_val - 10, 90)
 
-    binarized = np.where(gray_np > threshold, 255, 0).astype(np.uint8)
+    if not skip_binarization:
+        binarized = np.where(gray_np > threshold, 255, 0).astype(np.uint8)
+    else:
+        binarized = gray_np.astype(np.uint8)
 
-    # ---------- BACK TO RGB FOR EasyOCR ----------
+    # ---------- BACK TO RGB ----------
     processed = Image.fromarray(binarized).convert("RGB")
-
-    # ✅ ADD: final resize safety (EasyOCR prefers RGB uint8)
-    processed = processed.resize(
-        (processed.width, processed.height),
-        Image.BICUBIC
-    )
-
     return np.array(processed)
 
 
@@ -88,7 +81,7 @@ def ocr_on_image(image):
     extracted_text = []
     confidences = []
 
-    # ✅ STEP 3: INCREASE OCR RESOLUTION (BEFORE PREPROCESSING)
+    # Increase resolution BEFORE preprocessing
     pil_image = Image.fromarray(image).convert("RGB")
     pil_image = pil_image.resize(
         (pil_image.width * 2, pil_image.height * 2),
@@ -98,35 +91,35 @@ def ocr_on_image(image):
 
     processed = preprocess_image(image)
     if processed is None:
-        return {
-            "final": {
-                "text": "",
-                "confidence": 0
-            }
-        }
+        return {"final": {"text": "", "confidence": 0}}
 
     try:
-        # ✅ EASYOCR EXECUTION
-        # ✅ ADD: tuned parameters for ID cards
+        # ✅ EasyOCR document-tuned execution
         results = reader.readtext(
             processed,
             detail=1,
-            paragraph=False,
+            paragraph=True,
+            decoder="beamsearch",
+            text_threshold=0.7,
+            low_text=0.4,
+            link_threshold=0.4,
             contrast_ths=0.1,
             adjust_contrast=0.5,
-            text_threshold=0.6,
-            low_text=0.3,
-            link_threshold=0.4
+            mag_ratio=2.0
         )
     except Exception:
-        return {
-            "final": {
-                "text": "",
-                "confidence": 0
-            }
-        }
+        return {"final": {"text": "", "confidence": 0}}
 
-    for box, text, conf in results:
+    # ✅ SAFE RESULT HANDLING (paragraph mode compatible)
+    for item in results:
+        if len(item) == 3:
+            box, text, conf = item
+        elif len(item) == 2:
+            box, text = item
+            conf = 0.8  # default confidence for paragraph mode
+        else:
+            continue
+
         if text and isinstance(text, str):
             clean_text = normalize_text(text)
             if clean_text:
@@ -134,7 +127,13 @@ def ocr_on_image(image):
                 confidences.append(conf)
 
     final_text = " ".join(extracted_text)
-    avg_conf = round(float(np.mean(confidences)) * 100, 2) if confidences else 0
+
+    # ✅ SAFE CONFIDENCE CALCULATION
+    valid_conf = [c for c in confidences if isinstance(c, (int, float))]
+    avg_conf = round(
+        ((np.mean(valid_conf) + np.median(valid_conf)) / 2) * 100,
+        2
+    ) if valid_conf else 0
 
     return {
         "final": {
