@@ -32,8 +32,16 @@ def preprocess_image(image_input):
     if image_input is None or not isinstance(image_input, np.ndarray):
         return None
 
+    # ✅ ADD: force uint8 for EasyOCR stability
+    if image_input.dtype != np.uint8:
+        image_input = image_input.astype(np.uint8)
+
     # NumPy → PIL RGB
     img = Image.fromarray(image_input).convert("RGB")
+
+    # ✅ ADD: ensure minimum resolution (Aadhaar text is tiny)
+    if img.width < 800 or img.height < 600:
+        img = img.resize((img.width * 2, img.height * 2), Image.BICUBIC)
 
     # ---------- UPSCALE FOR OCR ----------
     new_width = int(img.width * 1.5)
@@ -44,24 +52,49 @@ def preprocess_image(image_input):
     gray = img.convert("L")
     gray = gray.filter(ImageFilter.MedianFilter(size=3))
 
+    # ✅ ADD: slight brightness normalization
+    gray = ImageEnhance.Brightness(gray).enhance(1.1)
+
     # ---------- CONTRAST & SHARPEN ----------
     gray = ImageOps.autocontrast(gray)
     gray = ImageEnhance.Contrast(gray).enhance(2.0)
     gray = gray.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
 
+    # ✅ ADD: second gentle sharpening (helps Aadhaar fonts)
+    gray = ImageEnhance.Sharpness(gray).enhance(1.4)
+
     # ---------- ADAPTIVE-LIKE BINARIZATION ----------
     gray_np = np.array(gray)
     mean_val = gray_np.mean()
-    binarized = np.where(gray_np > mean_val - 10, 255, 0).astype(np.uint8)
+
+    # ✅ ADD: clamp threshold to avoid over-binarization
+    threshold = max(mean_val - 10, 90)
+
+    binarized = np.where(gray_np > threshold, 255, 0).astype(np.uint8)
 
     # ---------- BACK TO RGB FOR EasyOCR ----------
     processed = Image.fromarray(binarized).convert("RGB")
+
+    # ✅ ADD: final resize safety (EasyOCR prefers RGB uint8)
+    processed = processed.resize(
+        (processed.width, processed.height),
+        Image.BICUBIC
+    )
+
     return np.array(processed)
 
 
 def ocr_on_image(image):
     extracted_text = []
     confidences = []
+
+    # ✅ STEP 3: INCREASE OCR RESOLUTION (BEFORE PREPROCESSING)
+    pil_image = Image.fromarray(image).convert("RGB")
+    pil_image = pil_image.resize(
+        (pil_image.width * 2, pil_image.height * 2),
+        Image.BICUBIC
+    )
+    image = np.array(pil_image)
 
     processed = preprocess_image(image)
     if processed is None:
@@ -74,7 +107,17 @@ def ocr_on_image(image):
 
     try:
         # ✅ EASYOCR EXECUTION
-        results = reader.readtext(processed)
+        # ✅ ADD: tuned parameters for ID cards
+        results = reader.readtext(
+            processed,
+            detail=1,
+            paragraph=False,
+            contrast_ths=0.1,
+            adjust_contrast=0.5,
+            text_threshold=0.6,
+            low_text=0.3,
+            link_threshold=0.4
+        )
     except Exception:
         return {
             "final": {

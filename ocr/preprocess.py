@@ -14,6 +14,13 @@ def preprocess_image(image_input):
     else:
         raise ValueError("Unsupported image input")
 
+    # 🔹 ADD: Ensure minimum resolution (helps small Aadhaar text)
+    if img.width < 800 or img.height < 600:
+        img = img.resize(
+            (img.width * 2, img.height * 2),
+            Image.BICUBIC
+        )
+
     # ---------------- RESIZE FOR OCR ----------------
     # Mild upscale helps OCR detect small fonts
     new_width = int(img.width * 1.5)
@@ -25,6 +32,9 @@ def preprocess_image(image_input):
     # Median filter to reduce noise
     gray = gray.filter(ImageFilter.MedianFilter(size=3))
 
+    # 🔹 ADD: Slight brightness boost (OCR stability)
+    gray = ImageEnhance.Brightness(gray).enhance(1.1)
+
     # ---------------- CONTRAST & SHARPEN ----------------
     gray = ImageOps.autocontrast(gray)
     # Extra contrast boost for OCR stability
@@ -32,12 +42,25 @@ def preprocess_image(image_input):
     # Optional sharpening to enhance text edges
     gray = gray.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
 
+    # 🔹 ADD: Second gentle sharpen for Aadhaar fonts
+    gray = ImageEnhance.Sharpness(gray).enhance(1.5)
+
     # ---------------- ADAPTIVE-LIKE BINARIZATION ----------------
     gray_np = np.array(gray)
     mean_val = gray_np.mean()
-    binarized = np.where(gray_np > mean_val - 10, 255, 0).astype(np.uint8)
+
+    # 🔹 ADD: Clamp threshold to avoid over-binarization
+    threshold = max(mean_val - 10, 90)
+
+    binarized = np.where(gray_np > threshold, 255, 0).astype(np.uint8)
 
     # ---------------- CONVERT BACK TO RGB ----------------
     processed = Image.fromarray(binarized).convert("RGB")
+
+    # 🔹 ADD: Final resize safety for PaddleOCR
+    processed = processed.resize(
+        (processed.width, processed.height),
+        Image.BICUBIC
+    )
 
     return np.array(processed)
