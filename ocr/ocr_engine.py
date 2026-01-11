@@ -12,7 +12,8 @@ os.environ["OMP_NUM_THREADS"] = "4"
 # We define paddle_ocr as None to prevent NameError if your app.py still calls it,
 # but we focus on EasyOCR as per your latest code.
 paddle_ocr = None 
-reader = easyocr.Reader(['en'], gpu=False)
+# Force download during startup
+reader = easyocr.Reader(['en'], gpu=False, model_storage_directory='./models')
 
 def normalize_text(text):
     if not text:
