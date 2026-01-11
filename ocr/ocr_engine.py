@@ -118,7 +118,7 @@ def preprocess_image(image_input):
     mean_val = gray_np.mean()
     contrast_level = np.std(gray_np)
 
-    skip_binarization = contrast_level > 45
+    skip_binarization = contrast_level > 30
     threshold = max(mean_val - 10, 90)
 
     if not skip_binarization:
@@ -155,8 +155,10 @@ def ocr_on_image(image):
     # Increase resolution BEFORE preprocessing
     pil_image = Image.fromarray(image).convert("RGB")
     pil_image = pil_image.resize(
-        (pil_image.width * 2, pil_image.height * 2),
+        (int(pil_image.width * 1.3), int(pil_image.height * 1.3)),
         Image.BICUBIC
+    )
+
     )
     image = np.array(pil_image)
 
@@ -169,28 +171,18 @@ def ocr_on_image(image):
 
     try:
         # ================= PRIMARY OCR PASS =================
-        results_main = reader.readtext(
-            processed,
-            detail=1,
-            paragraph=True,
-            decoder="beamsearch",
-            text_threshold=0.7,
-            low_text=0.4,
-            link_threshold=0.4,
-            contrast_ths=0.1,
-            adjust_contrast=0.5,
-            mag_ratio=2.0
-        )
-
-        # ================= SECONDARY OCR PASS (RECOVERY) =================
-        results_secondary = reader.readtext(
+        results = reader.readtext(
             processed,
             detail=1,
             paragraph=False,
-            decoder="greedy"
+            decoder="greedy",
+            text_threshold=0.6,
+            low_text=0.3,
+            link_threshold=0.3,
+            contrast_ths=0.05,
+            adjust_contrast=0.3,
+            mag_ratio=1.0
         )
-
-        results = results_main + results_secondary
 
     except Exception:
         return {"final": {"text": "", "confidence": 0}}
@@ -209,8 +201,9 @@ def ocr_on_image(image):
             clean_text = normalize_text(text)
 
             # 🔹 ADD: Ignore tiny garbage fragments
-            if len(clean_text) < 3:
+            if len(clean_text) < 4 and not any(c.isdigit() for c in clean_text):
                 continue
+
 
             extracted_text.append(clean_text)
             confidences.append(conf)
