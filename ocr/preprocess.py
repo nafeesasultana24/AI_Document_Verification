@@ -72,7 +72,10 @@ def preprocess_image(image_input):
     # 🔹 ADD: Clamp threshold to avoid over-binarization
     threshold = max(mean_val - 10, 90)
 
-    binarized = np.where(gray_np > threshold, 255, 0).astype(np.uint8)
+    binarized = np.where(gray_np > threshold, 255, gray_np).astype(np.uint8)
+    # ⚠️ IMPORTANT CHANGE:
+    # Instead of hard 0 (which destroys thin text),
+    # we keep original gray values for darker pixels
 
     # ---------------- CONVERT BACK TO RGB ----------------
     processed = Image.fromarray(binarized).convert("RGB")
@@ -85,5 +88,5 @@ def preprocess_image(image_input):
 
     # 🔹 ADD: Return BOTH formats safely
     # EasyOCR → NumPy
-    # Debug / display → PIL
-    return np.array(processed)
+    # Streamlit display → PIL
+    return np.array(processed), processed

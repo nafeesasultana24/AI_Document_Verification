@@ -128,8 +128,6 @@ if uploaded_files:
         if file.name.lower().endswith(".pdf"):
             pages = pdf_to_images(file.read())
 
-
-
             for i, page in enumerate(pages):
                 st.markdown(f"### 📄 Page {i+1}")
 
@@ -157,11 +155,9 @@ if uploaded_files:
                 st.write("OCR TEXT LENGTH:", len(text))
                 st.write("OCR CONFIDENCE:", confidence)
 
-
-
                 st.markdown("<div class='card'>", unsafe_allow_html=True)
                 st.markdown("**📄 OCR Extracted Text**")
-                st.text_area("", text, height=150)
+                st.text_area("", text, height=150, key=f"pdf_text_{file.name}_{i}")
                 st.markdown(f"**OCR Confidence:** {confidence}%")
                 st.progress(confidence / 100)
                 st.markdown("</div>", unsafe_allow_html=True)
@@ -197,10 +193,9 @@ if uploaded_files:
             st.write("OCR TEXT LENGTH:", len(text))
             st.write("OCR CONFIDENCE:", confidence)
 
-
             st.markdown("<div class='card'>", unsafe_allow_html=True)
             st.markdown("**📄 OCR Extracted Text**")
-            st.text_area("", text, height=150)
+            st.text_area("", text, height=150, key=f"img_text_{file.name}")
 
             color = "🟢" if confidence >= 80 else "🟡"
             st.markdown(f"{color} **OCR Confidence:** {confidence}%")
@@ -215,11 +210,39 @@ if uploaded_files:
     st.markdown("## ✅ Verification Results")
 
     st.markdown("<div class='card'>", unsafe_allow_html=True)
+    
+    # ✅ DYNAMIC EXTRACTION RESULTS DISPLAY
+    # Check if 'Extracted Fields' exists from verify_document and display as sub-section
+    if "Extracted Fields" in final_report:
+        st.markdown("### 📑 Document Data Analysis")
+        fields = final_report["Extracted Fields"]
+        col1, col2 = st.columns(2)
+        
+        # Split fields into two columns for better UI
+        items = list(fields.items())
+        mid = len(items) // 2 + len(items) % 2
+        
+        for i, (k, v) in enumerate(items):
+            display_val = v if v else "Not Found"
+            if i < mid:
+                col1.markdown(f"**{k}:** `{display_val}`")
+            else:
+                col2.markdown(f"**{k}:** `{display_val}`")
+        st.markdown("---")
+
+    # Display remaining verification statuses (Aadhaar Detected, PAN Detected, Integrity, etc.)
     for k, v in final_report.items():
+        if k == "Extracted Fields" or k == "Field Validation":
+            continue # Already handled or too technical for main list
+            
         if isinstance(v, bool):
-            st.markdown(f"**{k}:** {'YES' if v else 'NO'}")
+            status_icon = "✅" if v else "❌"
+            st.markdown(f"{status_icon} **{k}:** {'YES' if v else 'NO'}")
+        elif isinstance(v, (int, float)):
+            st.markdown(f"📊 **{k}:** `{v}`")
         else:
-            st.markdown(f"**{k}:** {v}")
+            st.markdown(f"📌 **{k}:** {v}")
+            
     st.markdown("</div>", unsafe_allow_html=True)
 
     # ---------------- EXPORT PDF ----------------
@@ -237,4 +260,4 @@ if uploaded_files:
 # ---------------- COMBINED TEXT ----------------
 if all_text:
     st.subheader("📄 Combined Extracted Text")
-    st.text_area("", all_text, height=300)
+    st.text_area("", all_text, height=300, key="combined_text_area")

@@ -1,6 +1,5 @@
 import re
 
-
 def extract_fields(text, verified_aadhaar=None):   # ✅ ADDED PARAMETER
     fields = {}
 
@@ -18,14 +17,14 @@ def extract_fields(text, verified_aadhaar=None):   # ✅ ADDED PARAMETER
     if extracted_name:
         blocked_words = [
             "GOVERNMENT", "INDIA", "UNIQUE", "IDENTIFICATION",
-            "AUTHORITY", "AADHAAR", "ENROLMENT"
+            "AUTHORITY", "AADHAAR", "ENROLMENT", "INCOME", "TAX", "DEPARTMENT"
         ]
         if any(w in extracted_name for w in blocked_words):
             extracted_name = None
 
     fields["Name"] = extracted_name
 
-    # ---------- DATE (DOB / ISSUE DATE) ----------
+    # ---------- DATE (DOB / ISSUE DATE / EXPIRY) ----------
     date_match = re.search(
         r"\b(\d{2}[\/\-]\d{2}[\/\-]\d{4})\b", text_clean
     )
@@ -47,6 +46,7 @@ def extract_fields(text, verified_aadhaar=None):   # ✅ ADDED PARAMETER
                 break
 
     # ---------- AADHAAR ----------
+    # This pattern looks for the 12-digit Aadhaar format
     aadhaar_match = re.search(
         r"\b[2-9]\d{3}\s?\d{4}\s?\d{4}\b", text_clean
     )
@@ -66,15 +66,41 @@ def extract_fields(text, verified_aadhaar=None):   # ✅ ADDED PARAMETER
     pan_match = re.search(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b", text_clean)
     fields["PAN Number"] = pan_match.group() if pan_match else None
 
+    # ---------- GENERAL ID DETECTION (VOTER / DL / OTHER) ----------
+    # ✅ ADDED: Generalized ID extraction for other documents
+    if not fields.get("Aadhaar Number") and not fields.get("PAN Number"):
+        # Voter ID Pattern (3 Alpha + 7 Numeric)
+        voter_match = re.search(r"\b[A-Z]{3}[0-9]{7}\b", text_clean)
+        # Driving License (State code + 13 digits)
+        dl_match = re.search(r"\b[A-Z]{2}[0-9]{2}\s?[0-9]{11}\b", text_clean)
+        
+        if voter_match:
+            fields["Voter ID"] = voter_match.group()
+        if dl_match:
+            fields["DL Number"] = dl_match.group()
+
     # ---------- ADDRESS ----------
     address_keywords = [
         "ADDRESS", "VILLAGE", "ROAD", "DISTRICT",
-        "STATE", "PIN", "PO", "VTC", "SUB DISTRICT"
+        "STATE", "PIN", "PO", "VTC", "SUB DISTRICT", "HOUSE NO"
     ]
 
     if any(k in text_clean for k in address_keywords):
         fields["Address"] = "Present"
     else:
         fields["Address"] = None
+
+    # ---------- DOCUMENT TYPE CLASSIFICATION ----------
+    # ✅ ADDED: Helps the Streamlit UI show what was found
+    if "AADHAAR" in text_clean:
+        fields["Document Type"] = "Aadhaar Card"
+    elif "INCOME TAX" in text_clean or fields["PAN Number"]:
+        fields["Document Type"] = "PAN Card"
+    elif "ELECTION COMMISSION" in text_clean:
+        fields["Document Type"] = "Voter ID"
+    elif "DRIVING LICENCE" in text_clean:
+        fields["Document Type"] = "Driving Licence"
+    else:
+        fields["Document Type"] = "Generic Document"
 
     return fields

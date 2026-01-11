@@ -8,12 +8,11 @@ import re  # 🔹 ADD: needed for cleanup safety
 # ===== STREAMLIT SAFE ENV =====
 os.environ["OMP_NUM_THREADS"] = "4"
 
-# ❌ DISABLED (DO NOT REMOVE LINE – prevents crash)
-PaddleOCR = None
-
-# ✅ Load EasyOCR ONCE
+# ✅ LOAD ENGINES
+# We define paddle_ocr as None to prevent NameError if your app.py still calls it,
+# but we focus on EasyOCR as per your latest code.
+paddle_ocr = None 
 reader = easyocr.Reader(['en'], gpu=False)
-
 
 def normalize_text(text):
     if not text:
@@ -24,11 +23,13 @@ def normalize_text(text):
 
     # 🔹 ADD: Fix common OCR misreads BEFORE extraction
     replacements = {
-        "O": "0",
-        "I": "1",
-        "L": "1",
-        "|": "1",
-        "S": "5"
+        "1ndia": "India",
+        "1dentification": "Identification",
+        "MA1E": "MALE",
+        "P1N": "PIN",
+        "5ub": "Sub",
+        "Disuict": "District",
+        "Govemment": "Government"
     }
 
     for k, v in replacements.items():
@@ -48,7 +49,14 @@ def preprocess_image(image_input):
     """
 
     # ---------- INPUT HANDLING ----------
-    if image_input is None or not isinstance(image_input, np.ndarray):
+    if image_input is None:
+        return None
+    
+    # If input is a PIL Image (from Streamlit), convert to NumPy
+    if isinstance(image_input, Image.Image):
+        image_input = np.array(image_input.convert("RGB"))
+
+    if not isinstance(image_input, np.ndarray):
         return None
 
     # Force uint8 for EasyOCR stability
@@ -97,7 +105,8 @@ def preprocess_image(image_input):
     threshold = max(mean_val - 10, 90)
 
     if not skip_binarization:
-        binarized = np.where(gray_np > threshold, 255, 0).astype(np.uint8)
+        # 🔥 FIX: SOFT BINARIZATION (DO NOT KILL TEXT)
+        binarized = np.where(gray_np > threshold, 255, gray_np).astype(np.uint8)
     else:
         binarized = gray_np.astype(np.uint8)
 
@@ -106,13 +115,25 @@ def preprocess_image(image_input):
     return np.array(processed)
 
 
+def extract_text(image_input):
+    """
+    Wrapper function to maintain compatibility with app.py 
+    while using your existing ocr_on_image logic.
+    """
+    return ocr_on_image(image_input)
+
+
 def ocr_on_image(image):
     extracted_text = []
     confidences = []
 
     # 🔹 ADD: Safety guard for Streamlit uploads
-    if image is None or not isinstance(image, np.ndarray):
+    if image is None:
         return {"final": {"text": "", "confidence": 0}}
+
+    # Handle PIL Image from Streamlit
+    if isinstance(image, Image.Image):
+        image = np.array(image.convert("RGB"))
 
     # Increase resolution BEFORE preprocessing
     pil_image = Image.fromarray(image).convert("RGB")
@@ -127,8 +148,8 @@ def ocr_on_image(image):
         return {"final": {"text": "", "confidence": 0}}
 
     try:
-        # ✅ EasyOCR document-tuned execution
-        results = reader.readtext(
+        # ================= PRIMARY OCR PASS =================
+        results_main = reader.readtext(
             processed,
             detail=1,
             paragraph=True,
@@ -140,16 +161,27 @@ def ocr_on_image(image):
             adjust_contrast=0.5,
             mag_ratio=2.0
         )
+
+        # ================= SECONDARY OCR PASS (RECOVERY) =================
+        results_secondary = reader.readtext(
+            processed,
+            detail=1,
+            paragraph=False,
+            decoder="greedy"
+        )
+
+        results = results_main + results_secondary
+
     except Exception:
         return {"final": {"text": "", "confidence": 0}}
 
-    # ✅ SAFE RESULT HANDLING (paragraph mode compatible)
+    # ================= SAFE RESULT HANDLING =================
     for item in results:
         if len(item) == 3:
             box, text, conf = item
         elif len(item) == 2:
             box, text = item
-            conf = 0.8  # default confidence for paragraph mode
+            conf = 0.75
         else:
             continue
 
@@ -163,12 +195,20 @@ def ocr_on_image(image):
             extracted_text.append(clean_text)
             confidences.append(conf)
 
-    final_text = " ".join(extracted_text)
+    # Deduplicate lines to avoid the "Repeated Text" issue
+    seen = set()
+    deduped_text = []
+    for line in extracted_text:
+        if line not in seen:
+            deduped_text.append(line)
+            seen.add(line)
+
+    final_text = " ".join(deduped_text)
 
     # 🔹 ADD: Normalize excessive spaces
     final_text = re.sub(r"\s+", " ", final_text).strip()
 
-    # ✅ SAFE CONFIDENCE CALCULATION
+    # ================= CONFIDENCE CALCULATION =================
     valid_conf = [c for c in confidences if isinstance(c, (int, float))]
 
     avg_conf = round(
