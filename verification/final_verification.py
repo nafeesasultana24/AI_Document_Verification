@@ -152,3 +152,40 @@ def verify_document(text, confidence, filename):
     )
 
     return report
+# =====================================================
+# LEGACY IMAGE-BASED ENTRY POINT (DO NOT REMOVE)
+# =====================================================
+def final_verify(image_path):
+    """
+    Backward-compatible wrapper.
+    Uses OCR + new verification engine internally.
+    """
+
+    # --- OCR ---
+    try:
+        from ocr.ocr_engine import run_ocr
+    except ImportError:
+        raise ImportError("run_ocr not found. Check ocr/ocr_engine.py")
+
+    raw_text, clean_text, confidence = run_ocr(image_path)
+
+    # --- Use NEW verification pipeline ---
+    report = verify_document(
+        text=clean_text,
+        confidence=confidence,
+        filename=image_path
+    )
+
+    # --- Convert to old-style response format ---
+    result = {
+        "aadhaar_number": report.get("Aadhaar Number"),
+        "pan_number": report.get("PAN Number"),
+        "passport": None,  # future extension
+        "dob": report.get("Extracted Fields", {}).get("Date"),
+        "phone": None,
+        "raw_text": raw_text,
+        "clean_text": clean_text,
+        "verification_report": report
+    }
+
+    return result

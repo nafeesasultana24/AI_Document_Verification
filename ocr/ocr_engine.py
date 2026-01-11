@@ -3,6 +3,7 @@ import unicodedata
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps, ImageEnhance
 import easyocr
+import re  # 🔹 ADD: needed for cleanup safety
 
 # ===== STREAMLIT SAFE ENV =====
 os.environ["OMP_NUM_THREADS"] = "4"
@@ -17,7 +18,26 @@ reader = easyocr.Reader(['en'], gpu=False)
 def normalize_text(text):
     if not text:
         return ""
+
+    # 🔹 ADD: Unicode normalization (already present, extended safety)
     text = unicodedata.normalize("NFKC", text)
+
+    # 🔹 ADD: Fix common OCR misreads BEFORE extraction
+    replacements = {
+        "O": "0",
+        "I": "1",
+        "L": "1",
+        "|": "1",
+        "S": "5"
+    }
+
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+
+    # 🔹 ADD: Remove garbage symbols safely
+    text = re.sub(r"[^\w\s:/\-\.]", " ", text)
+
+    # Existing behavior preserved
     return text.replace("\n", " ").strip()
 
 
@@ -37,6 +57,10 @@ def preprocess_image(image_input):
 
     # NumPy → PIL RGB
     img = Image.fromarray(image_input).convert("RGB")
+
+    # 🔹 ADD: Safety check
+    if img.width == 0 or img.height == 0:
+        return None
 
     # Ensure minimum resolution
     if img.width < 800 or img.height < 600:
@@ -61,6 +85,11 @@ def preprocess_image(image_input):
 
     # ---------- CONDITIONAL BINARIZATION ----------
     gray_np = np.array(gray)
+
+    # 🔹 ADD: Prevent empty array crash
+    if gray_np.size == 0:
+        return None
+
     mean_val = gray_np.mean()
     contrast_level = np.std(gray_np)
 
@@ -80,6 +109,10 @@ def preprocess_image(image_input):
 def ocr_on_image(image):
     extracted_text = []
     confidences = []
+
+    # 🔹 ADD: Safety guard for Streamlit uploads
+    if image is None or not isinstance(image, np.ndarray):
+        return {"final": {"text": "", "confidence": 0}}
 
     # Increase resolution BEFORE preprocessing
     pil_image = Image.fromarray(image).convert("RGB")
@@ -122,14 +155,22 @@ def ocr_on_image(image):
 
         if text and isinstance(text, str):
             clean_text = normalize_text(text)
-            if clean_text:
-                extracted_text.append(clean_text)
-                confidences.append(conf)
+
+            # 🔹 ADD: Ignore tiny garbage fragments
+            if len(clean_text) < 3:
+                continue
+
+            extracted_text.append(clean_text)
+            confidences.append(conf)
 
     final_text = " ".join(extracted_text)
 
+    # 🔹 ADD: Normalize excessive spaces
+    final_text = re.sub(r"\s+", " ", final_text).strip()
+
     # ✅ SAFE CONFIDENCE CALCULATION
     valid_conf = [c for c in confidences if isinstance(c, (int, float))]
+
     avg_conf = round(
         ((np.mean(valid_conf) + np.median(valid_conf)) / 2) * 100,
         2
