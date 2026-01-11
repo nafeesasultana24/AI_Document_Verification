@@ -4,16 +4,32 @@ import numpy as np
 from PIL import Image, ImageFilter, ImageOps, ImageEnhance
 import easyocr
 import re  # 🔹 ADD: needed for cleanup safety
+import streamlit as st  # 🔹 ADD: Streamlit caching
 
 # ===== STREAMLIT SAFE ENV =====
 os.environ["OMP_NUM_THREADS"] = "4"
+os.environ["CUDA_VISIBLE_DEVICES"] = ""  # 🔹 ADD: force CPU, avoid GPU crash
 
 # ✅ LOAD ENGINES
 # We define paddle_ocr as None to prevent NameError if your app.py still calls it,
 # but we focus on EasyOCR as per your latest code.
 paddle_ocr = None 
-# Force download during startup
-reader = easyocr.Reader(['en'], gpu=False, model_storage_directory='./models')
+
+# 🔹 FIX: DO NOT INITIALIZE EasyOCR AT IMPORT TIME
+# reader = easyocr.Reader(['en'], gpu=False, model_storage_directory='./models')
+
+@st.cache_resource(show_spinner="Loading OCR engine (first run only)...")
+def load_easyocr_reader():
+    return easyocr.Reader(
+        ['en'],
+        gpu=False,
+        model_storage_directory="./models",
+        download_enabled=True
+    )
+
+def get_reader():
+    return load_easyocr_reader()
+
 
 def normalize_text(text):
     if not text:
@@ -147,6 +163,9 @@ def ocr_on_image(image):
     processed = preprocess_image(image)
     if processed is None:
         return {"final": {"text": "", "confidence": 0}}
+
+    # 🔹 FIX: Get cached reader safely
+    reader = get_reader()
 
     try:
         # ================= PRIMARY OCR PASS =================

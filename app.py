@@ -1,5 +1,6 @@
 import os
-os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["OMP_NUM_THREADS"] = "4"
 
 import streamlit as st
 import tempfile
