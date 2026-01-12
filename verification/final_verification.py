@@ -38,18 +38,56 @@ def fuzzy_contains(text, keywords, max_errors=2):
 
 
 # -------------------------------
-# AADHAAR EXTRACTION (ROBUST)
+# AADHAAR EXTRACTION (FIXED & ROBUST)
 # -------------------------------
 def extract_aadhaar_number(text):
     if not text:
         return None
 
-    digits = re.sub(r"\D", "", text)
-    candidates = re.findall(r"[2-9]\d{11}", digits)
+    text_upper = text.upper()
 
-    for num in candidates:
-        if verhoeff_check(num):
-            return num
+    aadhaar_keywords = [
+        "AADHAAR",
+        "AADHAR",
+        "YOUR AADHAAR",
+        "UIDAI",
+        "UNIQUE IDENTIFICATION"
+    ]
+
+    # Split text into logical chunks (prevents random long numbers)
+    chunks = re.split(r"[.\n]", text_upper)
+    candidates = []
+
+    for chunk in chunks:
+        # Aadhaar context required
+        if any(k in chunk for k in aadhaar_keywords):
+            digit_groups = re.findall(r"(?:\d[\s\-]*){12,14}", chunk)
+
+            for grp in digit_groups:
+                num = re.sub(r"\D", "", grp)
+
+                if len(num) != 12:
+                    continue
+
+                # Aadhaar never starts with 0 or 1
+                if num[0] in ("0", "1"):
+                    continue
+
+                # Reject repeated digits
+                if re.search(r"(\d)\1{3,}", num):
+                    continue
+
+                # Reject obvious sequences
+                if num in "12345678901234567890":
+                    continue
+
+                # Final UIDAI checksum validation
+                if verhoeff_check(num):
+                    candidates.append(num)
+
+    # Return most confident Aadhaar (voting)
+    if candidates:
+        return max(set(candidates), key=candidates.count)
 
     return None
 
@@ -74,14 +112,12 @@ def verify_document(text, confidence, filename):
 
     norm_text = normalize_text(text)
 
-    # Initial ML classification
     classification = classify_document(norm_text)
     report["Document Type"] = classification.get("document", "Unknown")
     report["Document Category"] = classification.get("category", "Other")
     report["Template Match Score"] = classification.get("score", 0)
 
-    # Extract IDs
-    aadhaar_no = extract_aadhaar_number(norm_text)
+    aadhaar_no = extract_aadhaar_number(text)   # 🔴 IMPORTANT: use raw OCR text
     pan_no = extract_pan(norm_text)
 
     aadhaar_keywords = [
@@ -99,9 +135,6 @@ def verify_document(text, confidence, filename):
 
     pan_detected = pan_no is not None
 
-    # -------------------------------
-    # RULE-BASED OVERRIDE
-    # -------------------------------
     if aadhaar_detected:
         report["Document Type"] = "Aadhaar Card"
         report["Document Category"] = "Government ID"
@@ -116,9 +149,6 @@ def verify_document(text, confidence, filename):
     report["PAN Detected"] = pan_detected
     report["PAN Number"] = pan_no if pan_detected else None
 
-    # -------------------------------
-    # FIELD EXTRACTION & VALIDATION
-    # -------------------------------
     fields = extract_fields(norm_text, verified_aadhaar=aadhaar_no)
     report["Extracted Fields"] = fields
 
@@ -137,38 +167,33 @@ def verify_document(text, confidence, filename):
     )
 
     # -------------------------------
-    # SMART CONFIDENCE BOOST (NEW)
+    # SMART CONFIDENCE BOOST
     # -------------------------------
     report["OCR Confidence"] = confidence
 
     if confidence < 40:
         report["OCR Warning"] = "Low OCR quality – text may be incomplete"
 
-    # 🔹 Base weighted confidence (old logic preserved)
     base_conf = (confidence * 0.4) + (field_conf * 0.6)
-
-    # 🔹 Smart boosts
     bonus = 0
 
     if aadhaar_no:
-        bonus += 6            # Valid UIDAI checksum = strong trust
+        bonus += 6
 
     if report["Document Category"] == "Government ID":
         bonus += 4
 
     if not suspicious:
-        bonus += 5            # Clean fields = very strong signal
+        bonus += 5
 
     if report.get("Template Match Score", 0) > 70:
         bonus += 3
 
-    # 🔹 Penalty control
     if confidence < 30:
         bonus -= 4
 
-    # 🔹 Final confidence with clamp
     final_conf = base_conf + bonus
-    final_conf = max(0, min(final_conf, 95))  # Never fake 100%
+    final_conf = max(0, min(final_conf, 95))
 
     report["Verification Confidence"] = round(final_conf, 2)
 
@@ -179,10 +204,6 @@ def verify_document(text, confidence, filename):
 # LEGACY IMAGE-BASED ENTRY POINT (DO NOT REMOVE)
 # =====================================================
 def final_verify(image_path):
-    """
-    Backward-compatible wrapper.
-    Uses OCR + new verification engine internally.
-    """
 
     try:
         from ocr.ocr_engine import run_ocr
