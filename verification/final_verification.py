@@ -69,6 +69,9 @@ def fuzzy_contains(text, keywords, max_errors=2):
 import re
 
 # Step 1: Simple Aadhaar extraction fallback
+import re
+
+# Step 1: Simple Aadhaar extraction fallback
 def extract_aadhaar_number(text):
     if not text:
         return None
@@ -87,19 +90,19 @@ def extract_aadhaar_number(text):
     chunks = re.split(r"[.\n]", text_upper)
     candidates = []
 
+    # ================= STEP 0: CONTEXT-BASED (EXISTING LOGIC) =================
     for chunk in chunks:
         # Aadhaar context required
         if any(k in chunk for k in aadhaar_keywords):
-            # 🔹 Extract digit groups (12–14 digits with optional spaces/dashes)
             digit_groups = re.findall(r"(?:\d[\s\-]*){12,14}", chunk)
 
             for grp in digit_groups:
-                # Remove non-digit characters
                 num = re.sub(r"\D", "", grp)
 
-                # Step 1: Basic length & starting digit checks
                 if len(num) != 12:
                     continue
+
+                # Aadhaar never starts with 0 or 1
                 if num[0] in ("0", "1"):
                     continue
 
@@ -108,31 +111,40 @@ def extract_aadhaar_number(text):
                     continue
 
                 # Reject obvious sequences
-                if num in "12345678901234567890":
+                if num in "123456789012":
                     continue
 
-                # ✅ Final UIDAI validation if available
-                try:
-                    from verification.utils import verhoeff_check
-                    if verhoeff_check(num):
-                        candidates.append(num)
-                except Exception:
-                    # If verhoeff_check fails, still accept basic valid 12-digit number
+                # Final UIDAI checksum validation
+                if verhoeff_check(num):
                     candidates.append(num)
 
-    # Return most confident Aadhaar (voting)
+    # ================= STEP 1: FALLBACK (CRITICAL FIX) =================
+    if not candidates:
+        digit_groups = re.findall(r"(?:\d[\s\-]*){12,14}", text)
+
+        for grp in digit_groups:
+            num = re.sub(r"\D", "", grp)
+
+            if len(num) != 12:
+                continue
+
+            if num[0] in ("0", "1"):
+                continue
+
+            if re.search(r"(\d)\1{3,}", num):
+                continue
+
+            if num in "123456789012":
+                continue
+
+            if verhoeff_check(num):
+                candidates.append(num)
+
+    # ================= FINAL SELECTION =================
     if candidates:
         return max(set(candidates), key=candidates.count)
 
-    # 🔹 Step 1 fallback: Simple 12-digit search anywhere in text if no context
-    fallback = re.findall(r"\b\d{12}\b", text)
-    if fallback:
-        for num in fallback:
-            if num[0] not in ("0", "1"):
-                return num[:4] + " " + num[4:8] + " " + num[8:]
-
     return None
-
 
 
 # -------------------------------
