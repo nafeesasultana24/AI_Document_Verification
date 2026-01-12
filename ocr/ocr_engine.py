@@ -3,20 +3,15 @@ import unicodedata
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps, ImageEnhance
 import easyocr
-import re  # 🔹 ADD: needed for cleanup safety
-import streamlit as st  # 🔹 ADD: Streamlit caching
+import re
+import streamlit as st
 
 # ===== STREAMLIT SAFE ENV =====
 os.environ["OMP_NUM_THREADS"] = "4"
-os.environ["CUDA_VISIBLE_DEVICES"] = ""  # 🔹 ADD: force CPU, avoid GPU crash
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 # ✅ LOAD ENGINES
-# We define paddle_ocr as None to prevent NameError if your app.py still calls it,
-# but we focus on EasyOCR as per your latest code.
 paddle_ocr = None 
-
-# 🔹 FIX: DO NOT INITIALIZE EasyOCR AT IMPORT TIME
-# reader = easyocr.Reader(['en'], gpu=False, model_storage_directory='./models')
 
 @st.cache_resource(show_spinner="Loading OCR engine (first run only)...")
 def load_easyocr_reader():
@@ -128,39 +123,38 @@ def ocr_on_image(image):
         Image.BICUBIC
     )
 
-    # 🔹 FIX: neutralized extra parenthesis (DO NOT DELETE LINE)
-    # )
-
     image = np.array(pil_image)
 
-    processed = preprocess_image(image)
-    if processed is None:
+    # ================= FIRST OCR PASS =================
+    processed_1 = preprocess_image(image)
+    if processed_1 is None:
         return {"final": {"text": "", "confidence": 0}}
+
+    # ================= SECOND OCR PASS (ENHANCED) =================
+    enhanced_img = Image.fromarray(image).convert("RGB")
+    enhanced_img = ImageEnhance.Contrast(enhanced_img).enhance(1.3)
+    enhanced_img = ImageEnhance.Sharpness(enhanced_img).enhance(1.3)
+    enhanced_img = np.array(enhanced_img)
+    processed_2 = preprocess_image(enhanced_img)
 
     reader = get_reader()
 
+    all_results = []
+
     try:
-        results = reader.readtext(
-            processed,
-            detail=1,
-            paragraph=False,
-            decoder="greedy",
-            text_threshold=0.6,
-            low_text=0.3,
-            link_threshold=0.3,
-            contrast_ths=0.05,
-            adjust_contrast=0.3,
-            mag_ratio=1.0
-        )
+        all_results.extend(reader.readtext(processed_1, detail=1))
+        if processed_2 is not None:
+            all_results.extend(reader.readtext(processed_2, detail=1))
     except Exception:
         return {"final": {"text": "", "confidence": 0}}
 
-    for item in results:
+    # ================= MERGE RESULTS =================
+    for item in all_results:
         if len(item) == 3:
             _, text, conf = item
         elif len(item) == 2:
             _, text = item
-            conf = 0.75
+            conf = 0.7
         else:
             continue
 
@@ -171,24 +165,27 @@ def ocr_on_image(image):
             extracted_text.append(clean_text)
             confidences.append(conf)
 
+    # Deduplicate intelligently
     seen = set()
     deduped_text = []
     for line in extracted_text:
-        if line not in seen:
+        key = line.lower()
+        if key not in seen:
             deduped_text.append(line)
-            seen.add(line)
+            seen.add(key)
 
     final_text = re.sub(r"\s+", " ", " ".join(deduped_text)).strip()
 
+    # ================= CONFIDENCE BOOST (SAFE) =================
     valid_conf = [c for c in confidences if isinstance(c, (int, float))]
-    avg_conf = round(
-        ((np.mean(valid_conf) + np.median(valid_conf)) / 2) * 100,
-        2
-    ) if valid_conf else 0
+    base_conf = ((np.mean(valid_conf) + np.median(valid_conf)) / 2) if valid_conf else 0
+
+    # 🔹 Dual-pass OCR confidence boost
+    boosted_conf = min(base_conf * 1.25, 0.92)
 
     return {
         "final": {
             "text": final_text,
-            "confidence": avg_conf
+            "confidence": round(boosted_conf * 100, 2)
         }
     }

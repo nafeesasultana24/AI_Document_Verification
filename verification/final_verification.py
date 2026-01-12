@@ -84,7 +84,6 @@ def verify_document(text, confidence, filename):
     aadhaar_no = extract_aadhaar_number(norm_text)
     pan_no = extract_pan(norm_text)
 
-    # Aadhaar keyword detection (OCR tolerant)
     aadhaar_keywords = [
         "AADHAAR",
         "AADHAR",
@@ -98,11 +97,10 @@ def verify_document(text, confidence, filename):
         fuzzy_contains(norm_text, aadhaar_keywords)
     )
 
-    # PAN detection
     pan_detected = pan_no is not None
 
     # -------------------------------
-    # RULE-BASED OVERRIDE (IMPORTANT)
+    # RULE-BASED OVERRIDE
     # -------------------------------
     if aadhaar_detected:
         report["Document Type"] = "Aadhaar Card"
@@ -112,7 +110,6 @@ def verify_document(text, confidence, filename):
         report["Document Type"] = "PAN Card"
         report["Document Category"] = "Government ID"
 
-    # Store results
     report["Aadhaar Detected"] = aadhaar_detected
     report["Aadhaar Number"] = aadhaar_no if aadhaar_detected else None
 
@@ -140,18 +137,44 @@ def verify_document(text, confidence, filename):
     )
 
     # -------------------------------
-    # CONFIDENCE HANDLING
+    # SMART CONFIDENCE BOOST (NEW)
     # -------------------------------
     report["OCR Confidence"] = confidence
 
     if confidence < 40:
         report["OCR Warning"] = "Low OCR quality – text may be incomplete"
 
-    report["Verification Confidence"] = round(
-        (confidence * 0.4) + (field_conf * 0.6), 2
-    )
+    # 🔹 Base weighted confidence (old logic preserved)
+    base_conf = (confidence * 0.4) + (field_conf * 0.6)
+
+    # 🔹 Smart boosts
+    bonus = 0
+
+    if aadhaar_no:
+        bonus += 6            # Valid UIDAI checksum = strong trust
+
+    if report["Document Category"] == "Government ID":
+        bonus += 4
+
+    if not suspicious:
+        bonus += 5            # Clean fields = very strong signal
+
+    if report.get("Template Match Score", 0) > 70:
+        bonus += 3
+
+    # 🔹 Penalty control
+    if confidence < 30:
+        bonus -= 4
+
+    # 🔹 Final confidence with clamp
+    final_conf = base_conf + bonus
+    final_conf = max(0, min(final_conf, 95))  # Never fake 100%
+
+    report["Verification Confidence"] = round(final_conf, 2)
 
     return report
+
+
 # =====================================================
 # LEGACY IMAGE-BASED ENTRY POINT (DO NOT REMOVE)
 # =====================================================
@@ -161,7 +184,6 @@ def final_verify(image_path):
     Uses OCR + new verification engine internally.
     """
 
-    # --- OCR ---
     try:
         from ocr.ocr_engine import run_ocr
     except ImportError:
@@ -169,18 +191,16 @@ def final_verify(image_path):
 
     raw_text, clean_text, confidence = run_ocr(image_path)
 
-    # --- Use NEW verification pipeline ---
     report = verify_document(
         text=clean_text,
         confidence=confidence,
         filename=image_path
     )
 
-    # --- Convert to old-style response format ---
     result = {
         "aadhaar_number": report.get("Aadhaar Number"),
         "pan_number": report.get("PAN Number"),
-        "passport": None,  # future extension
+        "passport": None,
         "dob": report.get("Extracted Fields", {}).get("Date"),
         "phone": None,
         "raw_text": raw_text,

@@ -40,27 +40,29 @@ def preprocess_image(image_input):
     # ---------------- GRAYSCALE & DENOISE ----------------
     gray = img.convert("L")
 
-    # Median filter to reduce noise
+    # 🔹 IMPROVED: double denoise pass (safe for Aadhaar)
     gray = gray.filter(ImageFilter.MedianFilter(size=3))
+    gray = gray.filter(ImageFilter.SMOOTH_MORE)
 
     # 🔹 ADD: Slight brightness boost (OCR stability)
-    gray = ImageEnhance.Brightness(gray).enhance(1.1)
+    gray = ImageEnhance.Brightness(gray).enhance(1.15)
 
     # ---------------- CONTRAST & SHARPEN ----------------
-    gray = ImageOps.autocontrast(gray)
+    # 🔹 IMPROVED: safer autocontrast with cutoff
+    gray = ImageOps.autocontrast(gray, cutoff=2)
 
     # Extra contrast boost for OCR stability
-    gray = ImageEnhance.Contrast(gray).enhance(2.0)
+    gray = ImageEnhance.Contrast(gray).enhance(2.2)
 
     # Optional sharpening to enhance text edges
     gray = gray.filter(
-        ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3)
+        ImageFilter.UnsharpMask(radius=1.2, percent=170, threshold=3)
     )
 
     # 🔹 ADD: Second gentle sharpen for Aadhaar fonts
-    gray = ImageEnhance.Sharpness(gray).enhance(1.5)
+    gray = ImageEnhance.Sharpness(gray).enhance(1.6)
 
-    # ---------------- ADAPTIVE-LIKE BINARIZATION ----------------
+    # ---------------- OCR-SAFE BINARIZATION ----------------
     gray_np = np.array(gray)
 
     # 🔹 ADD: Ensure numeric stability
@@ -69,16 +71,26 @@ def preprocess_image(image_input):
 
     mean_val = gray_np.mean()
 
-    # 🔹 ADD: Clamp threshold to avoid over-binarization
-    threshold = max(mean_val - 10, 90)
+    # 🔹 IMPROVED: dynamic threshold window (no hard clipping)
+    threshold_low = max(mean_val - 20, 85)
+    threshold_high = min(mean_val + 40, 220)
 
-    binarized = np.where(gray_np > threshold, 255, gray_np).astype(np.uint8)
-    # ⚠️ IMPORTANT CHANGE:
-    # Instead of hard 0 (which destroys thin text),
-    # we keep original gray values for darker pixels
+    # 🔹 IMPORTANT:
+    # Keep grayscale for darker pixels → avoids losing thin UIDAI font
+    binarized = np.where(
+        gray_np > threshold_high,
+        255,
+        np.where(gray_np < threshold_low, gray_np, gray_np)
+    ).astype(np.uint8)
 
-    # ---------------- CONVERT BACK TO RGB ----------------
-    processed = Image.fromarray(binarized).convert("RGB")
+    # ---------------- FINAL OCR STABILIZATION ----------------
+    processed = Image.fromarray(binarized)
+
+    # 🔹 ADD: gentle final contrast normalization
+    processed = ImageEnhance.Contrast(processed).enhance(1.1)
+
+    # 🔹 ADD: convert back to RGB (EasyOCR safe)
+    processed = processed.convert("RGB")
 
     # 🔹 ADD: Final resize safety for PaddleOCR / EasyOCR
     processed = processed.resize(
