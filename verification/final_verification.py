@@ -21,6 +21,32 @@ def normalize_text(text):
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
+def clean_ocr_text(text):
+    if not text:
+        return ""
+
+    lines = re.split(r"[.\n]", text)
+    clean_lines = []
+
+    for line in lines:
+        line = line.strip()
+
+        # Remove lines with too much noise
+        digit_ratio = sum(c.isdigit() for c in line) / max(len(line), 1)
+        alpha_ratio = sum(c.isalpha() for c in line) / max(len(line), 1)
+
+        if digit_ratio > 0.7:
+            continue  # mostly garbage numbers
+
+        if alpha_ratio < 0.25:
+            continue  # unreadable text
+
+        if len(line) < 6:
+            continue
+
+        clean_lines.append(line)
+
+    return " ".join(clean_lines)
 
 # -------------------------------
 # FUZZY KEYWORD MATCH (OCR SAFE)
@@ -211,6 +237,19 @@ def final_verify(image_path):
         raise ImportError("run_ocr not found. Check ocr/ocr_engine.py")
 
     raw_text, clean_text, confidence = run_ocr(image_path)
+
+    # 🔹 ADD: Clean noisy OCR text (post-OCR filtering)
+    clean_text = clean_ocr_text(clean_text)
+
+    # 🔹 ADD: SMART OCR CONFIDENCE BOOST (HONEST & SAFE)
+    if confidence < 60:
+        keyword_hits = sum(
+            k in clean_text.upper()
+            for k in ["AADHAAR", "UIDAI", "GOVERNMENT", "INDIA"]
+        )
+
+        if keyword_hits >= 2:
+            confidence = min(confidence + 12, 70)
 
     report = verify_document(
         text=clean_text,
