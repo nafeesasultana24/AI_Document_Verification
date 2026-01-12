@@ -246,17 +246,6 @@ if uploaded_files:
             
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---------------- EXPORT PDF ----------------
-    pdf_path = "verification_report.pdf"
-    generate_pdf(final_report, pdf_path)
-
-    with open(pdf_path, "rb") as f:
-        st.download_button(
-            label="📄 Download Verification Report (PDF)",
-            data=f,
-            file_name="AI_Govt_ID_Report.pdf",
-            mime="application/pdf"
-        )
 
 # ---------------- COMBINED TEXT ----------------
 if all_text:
