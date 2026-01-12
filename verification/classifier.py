@@ -1,7 +1,8 @@
 from verification.templates import DOCUMENT_TEMPLATES
+import re
 
 def classify_document(normalized_text):
-    text = normalized_text.replace(" ", "")
+    text = normalized_text.upper().replace(" ", "")
 
     best_match = {
         "document": "Unknown Document",
@@ -9,15 +10,15 @@ def classify_document(normalized_text):
         "score": 0
     }
 
+    # ================= TEMPLATE MATCHING =================
     for doc, info in DOCUMENT_TEMPLATES.items():
         keywords = info["keywords"]
         matched = 0
 
         for kw in keywords:
-            if kw.replace(" ", "") in text:
+            if kw.upper().replace(" ", "") in text:
                 matched += 1
 
-        # ✅ SCORE AS PERCENTAGE (BOOST)
         score = int((matched / len(keywords)) * 100)
 
         if score > best_match["score"]:
@@ -27,7 +28,43 @@ def classify_document(normalized_text):
                 "score": score
             }
 
-    # ✅ FALLBACK BOOST
+    # ================= AUTO-DETECT OVERRIDE =================
+    aadhaar_pattern = re.search(r"\b\d{4}\s?\d{4}\s?\d{4}\b", normalized_text)
+    pan_pattern = re.search(r"\b[A-Z]{5}\d{4}[A-Z]\b", normalized_text)
+
+    aadhaar_keywords = [
+        "UNIQUE IDENTIFICATION",
+        "UIDAI",
+        "AADHAAR",
+        "GOVERNMENT OF INDIA"
+    ]
+
+    pan_keywords = [
+        "INCOME TAX DEPARTMENT",
+        "PERMANENT ACCOUNT NUMBER",
+        "INCOME TAX"
+    ]
+
+    aadhaar_hits = sum(k in normalized_text.upper() for k in aadhaar_keywords)
+    pan_hits = sum(k in normalized_text.upper() for k in pan_keywords)
+
+    # 🔥 STRONG AADHAAR DETECTION
+    if aadhaar_pattern and aadhaar_hits >= 2:
+        return {
+            "document": "Aadhaar Card",
+            "category": "Government ID",
+            "score": max(best_match["score"], 85)
+        }
+
+    # 🔥 STRONG PAN DETECTION
+    if pan_pattern and pan_hits >= 2:
+        return {
+            "document": "PAN Card",
+            "category": "Government ID",
+            "score": max(best_match["score"], 85)
+        }
+
+    # ================= FALLBACK =================
     if best_match["score"] >= 30:
         return best_match
 
