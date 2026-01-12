@@ -139,7 +139,6 @@ def crop_aadhaar_region(img):
     return img.crop((0, int(h * 0.55), w, h))
 
 
-
 def ocr_on_image(image):
     extracted_text = []
     confidences = []
@@ -154,6 +153,19 @@ def ocr_on_image(image):
 
     aadhaar_region = crop_aadhaar_region(pil_image)
     processed_region = preprocess_image(aadhaar_region)
+
+    # ================= AADHAAR-ONLY OCR (CRITICAL FIX) =================
+    aadhaar_text_lines = []
+    try:
+        if processed_region is not None:
+            aadhaar_results = get_reader().readtext(
+                processed_region,
+                detail=0,
+                paragraph=True
+            )
+            aadhaar_text_lines.extend(aadhaar_results)
+    except Exception:
+        pass
 
 
     # ❌ Neutralize extra resize safely
@@ -219,7 +231,11 @@ def ocr_on_image(image):
             deduped_text.append(line)
             seen.add(key)
 
-    final_text = re.sub(r"\s+", " ", " ".join(deduped_text)).strip()
+    full_text = re.sub(r"\s+", " ", " ".join(deduped_text)).strip()
+    aadhaar_text = " ".join(aadhaar_text_lines)
+
+    final_text = full_text + " " + aadhaar_text
+
 
     # ================= CONFIDENCE (HONEST) =================
     valid_conf = [c for c in confidences if isinstance(c, (int, float))]
