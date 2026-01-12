@@ -4,101 +4,61 @@ from PIL import Image, ImageFilter, ImageOps, ImageEnhance
 
 
 def preprocess_image(image_input):
-    # ---------------- INPUT HANDLING ----------------
-    # Accept NumPy array or file path
+    # ================= INPUT HANDLING =================
     if isinstance(image_input, np.ndarray):
-        # 🔹 ADD: Ensure uint8 (Streamlit uploads sometimes break this)
         if image_input.dtype != np.uint8:
             image_input = image_input.astype(np.uint8)
-        img = Image.fromarray(image_input).convert("RGB")
+        img = Image.fromarray(image_input)
 
     elif isinstance(image_input, str):
         if not os.path.exists(image_input):
             raise ValueError(f"Image not found at path: {image_input}")
-        img = Image.open(image_input).convert("RGB")
+        img = Image.open(image_input)
 
     else:
         raise ValueError("Unsupported image input")
 
-    # 🔹 ADD: Safety check for corrupted images
+    img = img.convert("RGB")
+
     if img.width == 0 or img.height == 0:
         raise ValueError("Invalid image dimensions")
 
-    # 🔹 ADD: Ensure minimum resolution (helps small Aadhaar text)
-    if img.width < 800 or img.height < 600:
+    # ================= RESOLUTION SAFETY =================
+    # Upscale ONLY if image is genuinely small
+    if img.width < 1000:
+        scale = 1000 / img.width
         img = img.resize(
-            (img.width * 2, img.height * 2),
+            (int(img.width * scale), int(img.height * scale)),
             Image.BICUBIC
         )
 
-    # ---------------- RESIZE FOR OCR ----------------
-    # Mild upscale helps OCR detect small fonts
-    new_width = int(img.width * 1.5)
-    new_height = int(img.height * 1.5)
-    img = img.resize((new_width, new_height), Image.BICUBIC)
-
-    # ---------------- GRAYSCALE & DENOISE ----------------
+    # ================= GRAYSCALE =================
     gray = img.convert("L")
 
-    # 🔹 IMPROVED: double denoise pass (safe for Aadhaar)
+    # ================= NOISE REDUCTION (SAFE) =================
+    # Single median filter — no double denoise
     gray = gray.filter(ImageFilter.MedianFilter(size=3))
-    gray = gray.filter(ImageFilter.SMOOTH_MORE)
 
-    # 🔹 ADD: Slight brightness boost (OCR stability)
-    gray = ImageEnhance.Brightness(gray).enhance(1.15)
+    # ================= CONTRAST (CONTROLLED) =================
+    gray = ImageEnhance.Contrast(gray).enhance(1.6)
 
-    # ---------------- CONTRAST & SHARPEN ----------------
-    # 🔹 IMPROVED: safer autocontrast with cutoff
-    gray = ImageOps.autocontrast(gray, cutoff=2)
+    # ================= BRIGHTNESS (MINIMAL) =================
+    gray = ImageEnhance.Brightness(gray).enhance(1.05)
 
-    # Extra contrast boost for OCR stability
-    gray = ImageEnhance.Contrast(gray).enhance(2.2)
+    # ================= SHARPEN (ONCE ONLY) =================
+    gray = ImageEnhance.Sharpness(gray).enhance(1.3)
 
-    # Optional sharpening to enhance text edges
-    gray = gray.filter(
-        ImageFilter.UnsharpMask(radius=1.2, percent=170, threshold=3)
-    )
+    # ================= AUTOCONTRAST (SAFE) =================
+    gray = ImageOps.autocontrast(gray, cutoff=1)
 
-    # 🔹 ADD: Second gentle sharpen for Aadhaar fonts
-    gray = ImageEnhance.Sharpness(gray).enhance(1.6)
+    # ================= NO BINARIZATION =================
+    # Aadhaar UIDAI font is thin → binarization destroys it
+    processed = gray
 
-    # ---------------- OCR-SAFE BINARIZATION ----------------
-    gray_np = np.array(gray)
-
-    # 🔹 ADD: Ensure numeric stability
-    if gray_np.size == 0:
-        raise ValueError("Empty image after preprocessing")
-
-    mean_val = gray_np.mean()
-
-    # 🔹 IMPROVED: dynamic threshold window (no hard clipping)
-    threshold_low = max(mean_val - 20, 85)
-    threshold_high = min(mean_val + 40, 220)
-
-    # 🔹 IMPORTANT:
-    # Keep grayscale for darker pixels → avoids losing thin UIDAI font
-    binarized = np.where(
-        gray_np > threshold_high,
-        255,
-        np.where(gray_np < threshold_low, gray_np, gray_np)
-    ).astype(np.uint8)
-
-    # ---------------- FINAL OCR STABILIZATION ----------------
-    processed = Image.fromarray(binarized)
-
-    # 🔹 ADD: gentle final contrast normalization
-    processed = ImageEnhance.Contrast(processed).enhance(1.1)
-
-    # 🔹 ADD: convert back to RGB (EasyOCR safe)
+    # ================= FINAL FORMAT =================
     processed = processed.convert("RGB")
 
-    # 🔹 ADD: Final resize safety for PaddleOCR / EasyOCR
-    processed = processed.resize(
-        (processed.width, processed.height),
-        Image.BICUBIC
-    )
-
-    # 🔹 ADD: Return BOTH formats safely
-    # EasyOCR → NumPy
-    # Streamlit display → PIL
+    # ================= RETURN =================
+    # EasyOCR → numpy
+    # Streamlit → PIL
     return np.array(processed), processed
