@@ -51,16 +51,19 @@ def normalize_text(text):
 def compute_ocr_confidence(text):
     score = 40
 
-    if "UNIQUE IDENTIFICATION" in text.upper():
-        score += 15
+    text_u = text.upper()
 
+    if "UNIQUE IDENTIFICATION" in text_u:
+        score += 15
+    if "GOVERNMENT OF INDIA" in text_u:
+        score += 10
     if re.search(r"\b\d{4}\s\d{4}\s\d{4}\b", text):
         score += 20
-
     if len(text) > 300:
         score += 10
 
     return min(score, 95)
+
 
 
 
@@ -148,6 +151,10 @@ def ocr_on_image(image):
         image = np.array(image.convert("RGB"))
 
     pil_image = Image.fromarray(image).convert("RGB")
+
+    aadhaar_region = crop_aadhaar_region(pil_image)
+    processed_region = preprocess_image(aadhaar_region)
+
 
     # ❌ Neutralize extra resize safely
     pil_image = pil_image.resize(
